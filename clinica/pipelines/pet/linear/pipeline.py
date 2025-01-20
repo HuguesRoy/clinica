@@ -300,7 +300,7 @@ class PETLinear(PETPipeline):
         # type of transform
         #ants_registration_node.transforms = "Rigid"
         ants_registration_node.inputs.transforms = ['Rigid']
-        ants_registration_node.inputs.transform_parameters = [(0.2,)]
+        ants_registration_node.inputs.transform_parameters = [(0.1,)]
         # metrics, weights, sampling strategy
         ants_registration_node.inputs.metric = ["MI"]
         ants_registration_node.inputs.metric_weight = [1.0]
@@ -318,7 +318,7 @@ class PETLinear(PETPipeline):
         ants_registration_node.inputs.convergence_window_size = [10]
         
         #may be parameters that pos prob
-        #ants_registration_node.inputs.initial_moving_transform_com = 1
+        ants_registration_node.inputs.initial_moving_transform_com = 1
         #--initial-moving-transform
 
         #
@@ -336,43 +336,6 @@ class PETLinear(PETPipeline):
 
         #ants_registration_node.inputs.transform_type = "r"
         ###
-
-        ants_registration_totemp_node = npe.Node(
-            name="antsRegistrationTemplate", interface=ants.Registration()
-        )
-
-        #image dimension
-        ants_registration_totemp_node.inputs.dimension = 3
-        
-        # type of transform
-        #ants_registration_node.transforms = "Rigid"
-        ants_registration_totemp_node.inputs.transforms = ['Rigid']
-        ants_registration_totemp_node.inputs.transform_parameters = [(0.2,)]
-        # metrics, weights, sampling strategy
-        ants_registration_totemp_node.inputs.metric = ["MI"]
-        ants_registration_totemp_node.inputs.metric_weight = [1.0]
-        ants_registration_totemp_node.inputs.radius_or_number_of_bins = [32]
-        ants_registration_totemp_node.inputs.sampling_strategy = ['Regular']
-        ants_registration_totemp_node.inputs.sampling_percentage = [0.25]
-        
-        # stages parameters
-        ants_registration_totemp_node.inputs.shrink_factors = [[8,4]]
-        ants_registration_totemp_node.inputs.smoothing_sigmas = [[3,2]]
-        ants_registration_totemp_node.inputs.sigma_units = ["vox"]
-        ## convergence parameters
-        ants_registration_totemp_node.inputs.number_of_iterations = [[1000, 500]]
-        ants_registration_totemp_node.inputs.convergence_threshold = [1e-6]
-        ants_registration_totemp_node.inputs.convergence_window_size = [10]
-        
-        #may be parameters that pos prob
-        ants_registration_totemp_node.inputs.initial_moving_transform_com = 1
-        #--initial-moving-transform
-        #
-        ants_registration_totemp_node.inputs.winsorize_lower_quantile = 0.005
-        ants_registration_totemp_node.inputs.winsorize_upper_quantile = 0.995
-        ants_registration_totemp_node.inputs.collapse_output_transforms = True
-        ants_registration_totemp_node.inputs.use_histogram_matching = False
-        ants_registration_totemp_node.inputs.verbose = True
 
 
         ants_applytransform_reversed_node = npe.Node(
@@ -437,21 +400,6 @@ class PETLinear(PETPipeline):
                 #     ants_applytransform_reversed_node,
                 #     [("output_image","input_image")]
                 # ),
-                (
-                    ants_applytransform_reversed_node,
-                    ants_registration_totemp_node,
-                    [("output_image", "fixed_image")]
-                ),
-                (
-                    clipping_node,
-                    ants_registration_totemp_node,
-                    [("output_image", "moving_image")]
-                ),
-                (
-                    ants_applytransform_reversed_node,
-                    ants_registration_node,
-                    [("output_image","fixed_image_mask")]
-                ),
                 (
                     clipping_node,
                     ants_registration_node,
