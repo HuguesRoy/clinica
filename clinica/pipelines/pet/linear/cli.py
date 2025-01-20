@@ -32,6 +32,7 @@ pipeline_name = "pet-linear"
 @cli_param.option_group.common_pipelines_options
 @cli_param.option.subjects_sessions_tsv
 @cli_param.option.working_directory
+@cli_param.option.model_name
 @option.global_option_group
 @option.n_procs
 def cli(
@@ -45,6 +46,7 @@ def cli(
     random_seed: Optional[int] = None,
     subjects_sessions_tsv: Optional[str] = None,
     working_directory: Optional[str] = None,
+    model_name: Optional[str] = None,
     n_procs: Optional[int] = None,
 ) -> None:
     """Affine registration of PET images to the MNI standard space.
@@ -81,6 +83,7 @@ def cli(
         base_dir=working_directory,
         parameters=parameters,
         name=pipeline_name,
+        model_name=model_name,
     )
 
     exec_pipeline = (

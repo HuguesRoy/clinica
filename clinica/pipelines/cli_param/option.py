@@ -220,3 +220,10 @@ delete_cache = option(
     is_flag=True,
     help="If True, large intermediary files will be deleted before the end of the pipeline.",
 )
+
+model_name = option(
+    "-mn",
+    "--model_name",
+    type=str,
+    help="Name for testing different config in pet linear dev mode.",
+)

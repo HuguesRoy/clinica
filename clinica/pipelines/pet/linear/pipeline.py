@@ -25,6 +25,25 @@ class PETLinear(PETPipeline):
     Returns:
         A clinica pipeline object containing the pet_linear pipeline.
     """
+    def __init__(self,
+            bids_directory,
+            caps_directory,
+            tsv_file,
+            base_dir,
+            parameters,
+            name,
+            model_name = None,
+    ):
+        super().__init__(
+            bids_directory=bids_directory ,
+            caps_directory=caps_directory,
+            tsv_file=tsv_file,
+            base_dir=base_dir,
+            parameters=parameters,
+            name=name)
+        from pathlib import Path
+        self.model_name = str(model_name) if model_name is not None else model_name
+        
 
     def _check_custom_dependencies(self) -> None:
         """Check dependencies that can not be listed in the `info.json` file."""
@@ -59,7 +78,7 @@ class PETLinear(PETPipeline):
         import nipype.interfaces.utility as nutil
         import nipype.pipeline.engine as npe
 
-        from clinica.pipelines.pet.utils import get_suvr_mask
+        from clinica.pipelines.pet.utils import get_suvr_mask, get_binarized_mni_mask
         from clinica.utils.exceptions import (
             ClinicaBIDSError,
             ClinicaCAPSError,
@@ -81,6 +100,7 @@ class PETLinear(PETPipeline):
 
         self.ref_template = get_mni_template("t1")
         self.ref_mask = get_suvr_mask(self.parameters["suvr_reference_region"])
+        self.mni_dilated_mask = get_binarized_mni_mask()
 
         # Inputs from BIDS directory
         pet_files, pet_errors = clinica_file_reader(
@@ -205,57 +225,30 @@ class PETLinear(PETPipeline):
             ),
             name="containerPath",
         )
+
         self.connect(
             [
-                (self.input_node, container_path, [("pet", "bids_or_caps_filename")]),
-                (
-                    container_path,
-                    write_node,
-                    [(("container", fix_join, "pet_linear"), "container")],
-                ),
-                (self.input_node, rename_files, [("pet", "pet_bids_image_filename")]),
-                (
-                    self.output_node,
-                    rename_files,
-                    [("affine_mat", "pet_to_mri_transformation_filename")],
-                ),
-                (
-                    rename_files,
-                    write_node,
-                    [("transformation_filename_caps", "@transform_mat")],
-                ),
+                    (self.input_node, container_path, [("pet", "bids_or_caps_filename")]),
+                    (
+                        container_path,
+                        write_node,
+                        [(("container", fix_join, f"pet_linear/{self.model_name}",), "container")],
+                    ),
             ]
         )
-        if not (self.parameters.get("uncropped_image")):
-            node_out_name = "outfile_crop"
-        else:
-            node_out_name = "suvr_pet"
-        self.connect(
-            [
-                (
-                    self.output_node,
-                    rename_files,
-                    [(node_out_name, "pet_preprocessed_image_filename")],
-                ),
-                (
-                    rename_files,
-                    write_node,
-                    [("pet_filename_caps", "@registered_pet")],
-                ),
-            ]
-        )
+        
         if self.parameters.get("save_PETinT1w"):
             self.connect(
                 [
                     (
                         self.output_node,
-                        rename_files,
-                        [("PETinT1w", "pet_filename_in_t1w_raw")],
+                        write_node,
+                        [("PETinT1w", "@registered_pet_in_t1w")],
                     ),
                     (
-                        rename_files,
+                        self.input_node,
                         write_node,
-                        [("pet_filename_in_t1w_caps", "@registered_pet_in_t1w")],
+                        [("t1w", "@raw_t1w")],
                     ),
                 ]
             )
@@ -282,14 +275,6 @@ class PETLinear(PETPipeline):
             ),
             name="initPipeline",
         )
-        concatenate_node = npe.Node(
-            interface=nutil.Function(
-                input_names=["pet_to_t1w_transform", "t1w_to_mni_transform"],
-                output_names=["transforms_list"],
-                function=concatenate_transforms,
-            ),
-            name="concatenateTransforms",
-        )
 
         # The core (processing) nodes
 
@@ -303,65 +288,115 @@ class PETLinear(PETPipeline):
             ),
         )
 
+
         # 2. `RegistrationSynQuick` by *ANTS*. It uses nipype interface.
         ants_registration_node = npe.Node(
-            name="antsRegistration", interface=ants.RegistrationSynQuick()
+            name="antsRegistration", interface=ants.Registration()
         )
+
+        #image dimension
         ants_registration_node.inputs.dimension = 3
-        ants_registration_node.inputs.transform_type = "r"
+        
+        # type of transform
+        #ants_registration_node.transforms = "Rigid"
+        ants_registration_node.inputs.transforms = ['Rigid']
+        ants_registration_node.inputs.transform_parameters = [(0.2,)]
+        # metrics, weights, sampling strategy
+        ants_registration_node.inputs.metric = ["MI"]
+        ants_registration_node.inputs.metric_weight = [1.0]
+        ants_registration_node.inputs.radius_or_number_of_bins = [32]
+        ants_registration_node.inputs.sampling_strategy = ['Regular']
+        ants_registration_node.inputs.sampling_percentage = [0.25]
+        
+        # stages parameters
+        ants_registration_node.inputs.shrink_factors = [[8,4,2,1]]
+        ants_registration_node.inputs.smoothing_sigmas = [[16,2,1,0]]
+        ants_registration_node.inputs.sigma_units = ["vox"]
+        ## convergence parameters
+        ants_registration_node.inputs.number_of_iterations = [[1000, 500,250,100]]
+        ants_registration_node.inputs.convergence_threshold = [1e-6]
+        ants_registration_node.inputs.convergence_window_size = [10]
+        
+        #may be parameters that pos prob
+        #ants_registration_node.inputs.initial_moving_transform_com = 1
+        #--initial-moving-transform
 
-        # 3. `ApplyTransforms` by *ANTS*. It uses nipype interface. PET to MRI
-        ants_applytransform_node = npe.Node(
-            name="antsApplyTransformPET2MNI", interface=ants.ApplyTransforms()
+        #
+        ants_registration_node.inputs.winsorize_lower_quantile = 0.005
+        ants_registration_node.inputs.winsorize_upper_quantile = 0.995
+        ants_registration_node.inputs.collapse_output_transforms = False
+        ants_registration_node.inputs.use_histogram_matching = False
+        ants_registration_node.inputs.verbose = True
+        #ants_registration_node.inputs.save_state = "save_states_reg"
+        #ants_registration_node.inputs.random_seed = 161
+        
+        #ants_registration_node.inputs.save_state = "save_states_reg"
+        #initialization (align the moving image nad fixed image using the geometric center of mass)
+        #ants_registration_nonlinear_node.initial_moving_transform_com = 0
+
+        #ants_registration_node.inputs.transform_type = "r"
+        ###
+
+        ants_registration_totemp_node = npe.Node(
+            name="antsRegistrationTemplate", interface=ants.Registration()
         )
-        ants_applytransform_node.inputs.dimension = 3
-        ants_applytransform_node.inputs.reference_image = self.ref_template
 
-        # 4. Normalize the image (using nifti). It uses custom interface, from utils file
-        ants_registration_nonlinear_node = npe.Node(
-            name="antsRegistrationT1W2MNI", interface=ants.Registration()
+        #image dimension
+        ants_registration_totemp_node.inputs.dimension = 3
+        
+        # type of transform
+        #ants_registration_node.transforms = "Rigid"
+        ants_registration_totemp_node.inputs.transforms = ['Rigid']
+        ants_registration_totemp_node.inputs.transform_parameters = [(0.2,)]
+        # metrics, weights, sampling strategy
+        ants_registration_totemp_node.inputs.metric = ["MI"]
+        ants_registration_totemp_node.inputs.metric_weight = [1.0]
+        ants_registration_totemp_node.inputs.radius_or_number_of_bins = [32]
+        ants_registration_totemp_node.inputs.sampling_strategy = ['Regular']
+        ants_registration_totemp_node.inputs.sampling_percentage = [0.25]
+        
+        # stages parameters
+        ants_registration_totemp_node.inputs.shrink_factors = [[8,4]]
+        ants_registration_totemp_node.inputs.smoothing_sigmas = [[3,2]]
+        ants_registration_totemp_node.inputs.sigma_units = ["vox"]
+        ## convergence parameters
+        ants_registration_totemp_node.inputs.number_of_iterations = [[1000, 500]]
+        ants_registration_totemp_node.inputs.convergence_threshold = [1e-6]
+        ants_registration_totemp_node.inputs.convergence_window_size = [10]
+        
+        #may be parameters that pos prob
+        ants_registration_totemp_node.inputs.initial_moving_transform_com = 1
+        #--initial-moving-transform
+        #
+        ants_registration_totemp_node.inputs.winsorize_lower_quantile = 0.005
+        ants_registration_totemp_node.inputs.winsorize_upper_quantile = 0.995
+        ants_registration_totemp_node.inputs.collapse_output_transforms = True
+        ants_registration_totemp_node.inputs.use_histogram_matching = False
+        ants_registration_totemp_node.inputs.verbose = True
+
+
+        ants_applytransform_reversed_node = npe.Node(
+             name="antsApplyTransformReverseMNItoT1", interface=ants.ApplyTransforms()
         )
-        ants_registration_nonlinear_node.inputs.fixed_image = self.ref_template
-        ants_registration_nonlinear_node.inputs.metric = ["MI"]
-        ants_registration_nonlinear_node.inputs.metric_weight = [1.0]
-        ants_registration_nonlinear_node.inputs.transforms = ["SyN"]
-        ants_registration_nonlinear_node.inputs.transform_parameters = [(0.1, 3, 0)]
-        ants_registration_nonlinear_node.inputs.dimension = 3
-        ants_registration_nonlinear_node.inputs.shrink_factors = [[8, 4, 2]]
-        ants_registration_nonlinear_node.inputs.smoothing_sigmas = [[3, 2, 1]]
-        ants_registration_nonlinear_node.inputs.sigma_units = ["vox"]
-        ants_registration_nonlinear_node.inputs.number_of_iterations = [[200, 50, 10]]
-        ants_registration_nonlinear_node.inputs.convergence_threshold = [1e-05]
-        ants_registration_nonlinear_node.inputs.convergence_window_size = [10]
-        ants_registration_nonlinear_node.inputs.radius_or_number_of_bins = [32]
-        ants_registration_nonlinear_node.inputs.winsorize_lower_quantile = 0.005
-        ants_registration_nonlinear_node.inputs.winsorize_upper_quantile = 0.995
-        ants_registration_nonlinear_node.inputs.collapse_output_transforms = True
-        ants_registration_nonlinear_node.inputs.use_histogram_matching = False
-        ants_registration_nonlinear_node.inputs.verbose = True
 
-        ants_applytransform_nonlinear_node = npe.Node(
-            name="antsApplyTransformNonLinear", interface=ants.ApplyTransforms()
+        ants_applytransform_reversed_node.inputs.dimension = 3
+        ants_applytransform_reversed_node.inputs.invert_transform_flags=True
+        ants_applytransform_reversed_node.inputs.input_image = self.mni_dilated_mask
+        # binarization of mni
+
+        # ants_binarize_mni_node  = npe.Node(
+        #     name="BinarizeMNI", interface=ants.ThresholdImage()
+        # )
+        # ants_binarize_mni_node.inputs.input_image = self.ref_template
+        # ants_binarize_mni_node.inputs.inside_value = 1.
+        # ants_binarize_mni_node.inputs.inside_value = 1.
+        # ants_binarize_mni_node.inputs.th_low = 0.
+
+        ants_applytransform_PET_MNI_t = npe.Node(
+             name="antsApplyTransformReversePETtoMNIT1", interface=ants.ApplyTransforms()
         )
-        ants_applytransform_nonlinear_node.inputs.dimension = 3
-        ants_applytransform_nonlinear_node.inputs.reference_image = self.ref_template
 
-        if random_seed := self.parameters.get("random_seed", None):
-            ants_registration_nonlinear_node.inputs.random_seed = random_seed
-
-        normalize_intensity_node = npe.Node(
-            name="intensityNormalization",
-            interface=nutil.Function(
-                function=perform_suvr_normalization_task,
-                input_names=[
-                    "pet_image_path",
-                    "normalizing_image_path",
-                    "reference_mask_path",
-                ],
-                output_names=["output_image"],
-            ),
-        )
-        normalize_intensity_node.inputs.reference_mask_path = self.ref_mask
+        ants_applytransform_PET_MNI_t.inputs.dimension = 3
 
         # 5. Crop image (using nifti). It uses custom interface, from utils file
         crop_nifti_node = npe.Node(
@@ -372,16 +407,9 @@ class PETLinear(PETPipeline):
                 output_names=["output_image"],
             ),
         )
-        crop_nifti_node.inputs.output_path = self.base_dir
+        
 
-        # 6. Print end message
-        print_end_message = npe.Node(
-            interface=nutil.Function(
-                input_names=["pet", "final_file"], function=print_end_pipeline
-            ),
-            name="WriteEndMessage",
-        )
-
+        #Measure similarity
         # 7. Optional node: compute PET image in T1w
         ants_applytransform_optional_node = npe.Node(
             name="antsApplyTransformPET2T1w", interface=ants.ApplyTransforms()
@@ -393,101 +421,46 @@ class PETLinear(PETPipeline):
                 (self.input_node, init_node, [("pet", "pet")]),
                 # STEP 1:
                 (init_node, clipping_node, [("pet", "input_pet")]),
-                # STEP 2
+                # STEP 4
+                (
+                    self.input_node,
+                    ants_applytransform_reversed_node,
+                    [("t1w","reference_image")]
+                ),
+                (
+                    self.input_node,
+                    ants_applytransform_reversed_node,
+                    [("t1w_to_mni","transforms")]
+                ),
+                # (
+                #     ants_binarize_mni_node,
+                #     ants_applytransform_reversed_node,
+                #     [("output_image","input_image")]
+                # ),
+                (
+                    ants_applytransform_reversed_node,
+                    ants_registration_totemp_node,
+                    [("output_image", "fixed_image")]
+                ),
+                (
+                    clipping_node,
+                    ants_registration_totemp_node,
+                    [("output_image", "moving_image")]
+                ),
+                (
+                    ants_applytransform_reversed_node,
+                    ants_registration_node,
+                    [("output_image","fixed_image_mask")]
+                ),
                 (
                     clipping_node,
                     ants_registration_node,
                     [("output_image", "moving_image")],
                 ),
-                (self.input_node, ants_registration_node, [("t1w", "fixed_image")]),
-                # STEP 3
-                (
-                    ants_registration_node,
-                    concatenate_node,
-                    [("out_matrix", "pet_to_t1w_transform")],
-                ),
                 (
                     self.input_node,
-                    concatenate_node,
-                    [("t1w_to_mni", "t1w_to_mni_transform")],
-                ),
-                (
-                    clipping_node,
-                    ants_applytransform_node,
-                    [("output_image", "input_image")],
-                ),
-                (
-                    concatenate_node,
-                    ants_applytransform_node,
-                    [("transforms_list", "transforms")],
-                ),
-                # STEP 4
-                (
-                    self.input_node,
-                    ants_registration_nonlinear_node,
-                    [("t1w_linear", "moving_image")],
-                ),
-                (
-                    ants_registration_nonlinear_node,
-                    ants_applytransform_nonlinear_node,
-                    [("forward_transforms", "transforms")],
-                ),
-                (
-                    ants_applytransform_node,
-                    ants_applytransform_nonlinear_node,
-                    [("output_image", "input_image")],
-                ),
-                (
-                    ants_applytransform_node,
-                    normalize_intensity_node,
-                    [("output_image", "pet_image_path")],
-                ),
-                (
-                    ants_applytransform_nonlinear_node,
-                    normalize_intensity_node,
-                    [("output_image", "normalizing_image_path")],
-                ),
-                # Connect to DataSink
-                (
                     ants_registration_node,
-                    self.output_node,
-                    [("out_matrix", "affine_mat")],
-                ),
-                (
-                    normalize_intensity_node,
-                    self.output_node,
-                    [("output_image", "suvr_pet")],
-                ),
-                (self.input_node, print_end_message, [("pet", "pet")]),
-            ]
-        )
-        # STEP 5
-        # Case 1: crop the image
-        if not (self.parameters.get("uncropped_image")):
-            self.connect(
-                [
-                    (
-                        normalize_intensity_node,
-                        crop_nifti_node,
-                        [("output_image", "input_image")],
-                    ),
-                    (
-                        crop_nifti_node,
-                        self.output_node,
-                        [("output_image", "outfile_crop")],
-                    ),
-                ]
-            )
-            last_node = crop_nifti_node
-        # Case 2:  don't crop the image
-        else:
-            last_node = normalize_intensity_node
-        self.connect(
-            [
-                (
-                    last_node,
-                    print_end_message,
-                    [("output_image", "final_file")],
+                    [("t1w", "fixed_image")]
                 ),
             ]
         )
@@ -497,19 +470,40 @@ class PETLinear(PETPipeline):
             self.connect(
                 [
                     (
+                        self.input_node,
+                        ants_applytransform_optional_node,
+                        [("t1w", "reference_image")],
+                    ),
+                    (
                         clipping_node,
                         ants_applytransform_optional_node,
-                        [("output_image", "input_image"), ("t1w", "reference_image")],
+                        [("output_image", "input_image")],
                     ),
                     (
                         ants_registration_node,
                         ants_applytransform_optional_node,
-                        [("out_matrix", "transforms")],
+                        [("reverse_forward_transforms", "transforms")],
                     ),
                     (
                         ants_applytransform_optional_node,
                         self.output_node,
                         [("output_image", "PETinT1w")],
                     ),
+                    (
+                        self.input_node,
+                        ants_applytransform_PET_MNI_t,
+                        [("t1w", "reference_image")],
+                    ),
+                    (
+                        clipping_node,
+                        ants_applytransform_PET_MNI_t,
+                        [("output_image", "input_image")],
+                    ),
+                    (
+                        ants_registration_node,
+                        ants_applytransform_PET_MNI_t,
+                        [("reverse_forward_transforms", "transforms")],
+                    ),
+
                 ]
             )

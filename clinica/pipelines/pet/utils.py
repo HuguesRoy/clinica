@@ -31,6 +31,11 @@ def get_suvr_mask(region: Union[str, SUVRReferenceRegion]) -> Path:
         SUVRReferenceRegion(region)
     )
 
+def get_binarized_mni_mask() -> Path:
+
+    masks_dir = Path(__file__).resolve().parents[2] / "resources" / "masks"
+    return masks_dir / "dilated_MNI_binary_mask.nii.gz"
+
 
 def _get_suvr_reference_region_labels_filename(region: SUVRReferenceRegion) -> str:
     if region == SUVRReferenceRegion.PONS:
