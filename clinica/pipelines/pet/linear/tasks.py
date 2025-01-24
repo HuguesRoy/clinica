@@ -1,3 +1,4 @@
+
 def perform_suvr_normalization_task(
     pet_image_path: str,
     normalizing_image_path: str,
@@ -33,16 +34,18 @@ def clip_task(
 def rename_into_caps_task(
     pet_bids_image_filename: str,
     pet_preprocessed_image_filename: str,
-    pet_to_mri_transformation_filename: str,
+    pet_to_mri_transformation_filename: list,#Union[str,List], #typing not possible 
     suvr_reference_region: str,
     uncropped_image: bool,
     pet_filename_in_t1w_raw: str = None,
     output_dir: str = None,
 ) -> tuple:
+    
     from pathlib import Path
 
     from clinica.pipelines.pet.linear.utils import rename_into_caps
-
+    if isinstance(pet_to_mri_transformation_filename,list) and len(pet_to_mri_transformation_filename)==1:
+        pet_to_mri_transformation_filename = pet_to_mri_transformation_filename[0]
     if pet_filename_in_t1w_raw:
         pet_filename_in_t1w_raw = Path(pet_filename_in_t1w_raw)
     if output_dir:
