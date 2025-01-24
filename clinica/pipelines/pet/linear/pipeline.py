@@ -363,6 +363,11 @@ class PETLinear(PETPipeline):
         ants_applytransform_reversed_node.inputs.input_image = self.ref_brain_mask
 
         # 1.3 "MathImage" by *ANTS*. It uses nipype interface. skull stripping using "AND" operator
+        ants_extractbrain_node = npe.Node(
+            name="antsMathImageBrainExtract", interface=ants.MathImage()
+        )
+        ants_extractbrain_node.input.operation="m"
+
         # 2. `RegistrationSynQuick` by *ANTS*. It uses nipype interface.
         ants_registration_node = npe.Node(
             name="antsRegistration", interface=ants.Registration()
@@ -477,13 +482,34 @@ class PETLinear(PETPipeline):
                 (self.input_node, init_node, [("pet", "pet")]),
                 # STEP 1:
                 (init_node, clipping_node, [("pet", "input_pet")]),
+                # STEP 1.2 Apply inverse transform
+                (
+                    self.input_node,
+                    ants_applytransform_reversed_node,
+                    [("t1w","reference_image")],
+                ),
+                # STEP 1.3 Extract brain
+                (
+                    self.input_node,
+                    ants_extractbrain_node,
+                    [("t1w","op1")],
+                ),
+                (
+                    ants_applytransform_reversed_node,
+                    ants_extractbrain_node,
+                    [("output_image","op2")],
+                ),
                 # STEP 2
                 (
                     clipping_node,
                     ants_registration_node,
                     [("output_image", "moving_image")],
                 ),
-                (self.input_node, ants_registration_node, [("t1w", "fixed_image")]),
+                (
+                    ants_extractbrain_node,
+                    ants_registration_node,
+                    [("output_image", "fixed_image")],
+                ),
                 # STEP 3
                 (
                     ants_registration_node,
