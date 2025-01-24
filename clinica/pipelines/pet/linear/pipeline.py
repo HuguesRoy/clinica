@@ -362,11 +362,11 @@ class PETLinear(PETPipeline):
         ants_applytransform_reversed_node.inputs.invert_transform_flags=True
         ants_applytransform_reversed_node.inputs.input_image = self.ref_brain_mask
 
-        # 1.3 "MathImage" by *ANTS*. It uses nipype interface. skull stripping using "AND" operator
+        # 1.3 "ImageMath" by *ANTS*. It uses nipype interface. skull stripping using "AND" operator
         ants_extractbrain_node = npe.Node(
-            name="antsMathImageBrainExtract", interface=ants.MathImage()
+            name="antsMathImageBrainExtract", interface=ants.ImageMath()
         )
-        ants_extractbrain_node.input.operation="m"
+        ants_extractbrain_node.inputs.operation="m"
 
         # 2. `RegistrationSynQuick` by *ANTS*. It uses nipype interface.
         ants_registration_node = npe.Node(
@@ -396,7 +396,7 @@ class PETLinear(PETPipeline):
         ants_registration_node.inputs.winsorize_upper_quantile = 0.995
         ants_registration_node.inputs.use_histogram_matching = False
         ## extra parameters
-        ants_registration_node.inputs.collapse_output_transforms = False
+        ants_registration_node.inputs.collapse_output_transforms = True
         ants_registration_node.inputs.verbose = True
 
         # 3. `ApplyTransforms` by *ANTS*. It uses nipype interface. PET to MRI
@@ -486,6 +486,11 @@ class PETLinear(PETPipeline):
                 (
                     self.input_node,
                     ants_applytransform_reversed_node,
+                    [("t1w_to_mni","transforms")],
+                ),
+                (
+                    self.input_node,
+                    ants_applytransform_reversed_node,
                     [("t1w","reference_image")],
                 ),
                 # STEP 1.3 Extract brain
@@ -514,7 +519,7 @@ class PETLinear(PETPipeline):
                 (
                     ants_registration_node,
                     concatenate_node,
-                    [("out_matrix", "pet_to_t1w_transform")],
+                    [("reverse_forward_transforms", "pet_to_t1w_transform")],
                 ),
                 (
                     self.input_node,
@@ -561,7 +566,7 @@ class PETLinear(PETPipeline):
                 (
                     ants_registration_node,
                     self.output_node,
-                    [("out_matrix", "affine_mat")],
+                    [("reverse_forward_transforms", "affine_mat")],
                 ),
                 (
                     normalize_intensity_node,
@@ -619,7 +624,7 @@ class PETLinear(PETPipeline):
                     (
                         ants_registration_node,
                         ants_applytransform_optional_node,
-                        [("out_matrix", "transforms")],
+                        [("reverse_forward_transforms", "transforms")],
                     ),
                     (
                         ants_applytransform_optional_node,

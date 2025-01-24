@@ -24,7 +24,7 @@ def init_input_node(pet: str) -> str:
 
 
 def concatenate_transforms(
-    pet_to_t1w_transform: str, t1w_to_mni_transform: str
+    pet_to_t1w_transform: list, t1w_to_mni_transform: str
 ) -> list:
     """Concatenate two input transformation files into a list.
 
@@ -41,7 +41,7 @@ def concatenate_transforms(
     list :
         Both transform files path in a list.
     """
-    return [t1w_to_mni_transform, pet_to_t1w_transform]
+    return [t1w_to_mni_transform, *pet_to_t1w_transform]
 
 
 def perform_suvr_normalization(
