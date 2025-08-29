@@ -435,10 +435,12 @@ def crop_nifti(input_image: Path, output_dir: Optional[Path] = None) -> Path:
             "The function crop_nifti is implemented for anatomical 3D images. "
             f"You provided an image of shape {input_image.shape}."
         )
+    input_image_data = input_image.get_fdata()
+    data_image = _crop_array(input_image_data, MNI_CROP_BBOX)
     output_dir = output_dir or Path.cwd()
     crop_img = new_img_like(
         nib.load(get_mni_cropped_template()),
-        _crop_array(input_image.get_fdata(), MNI_CROP_BBOX),
+        data_image,
     )
     output_img = output_dir / f"{filename_no_ext}_cropped.nii.gz"
     crop_img.to_filename(output_img)
