@@ -18,4 +18,6 @@ from . import (
     t1_volume_parcellation,
     t1_volume_register_dartel,
     t1_volume_tissue_segmentation,
+    apply_transform,
+    apply_transform_1,
 )

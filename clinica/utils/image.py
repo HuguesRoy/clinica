@@ -367,7 +367,7 @@ def get_mni_cropped_template() -> Path:
     )
 
 
-def get_mni_template(modality: str) -> Path:
+def get_mni_template(modality: str, skullstripped: bool = False) -> Path:
     """Get the path to the MNI template for the given modality.
 
     If the file can be found locally in the resources folder, it is
@@ -378,6 +378,9 @@ def get_mni_template(modality: str) -> Path:
     ----------
     modality : str
         t1 or flair depending on which template is desired.
+    skullstripped : bool, optional
+        Use the local template with a _skullstripped suffix (default: False).
+        Skull-stripped templates must be supplied in resources/masks.
 
     Returns
     -------
@@ -391,6 +394,22 @@ def get_mni_template(modality: str) -> Path:
     FileNotFoundError:
         If the template could not be retrieved locally or remotely.
     """
+    if skullstripped:
+        filenames = {
+            "t1": "mni_icbm152_t1_tal_nlin_sym_09c_skullstripped",
+            "flair": "GG-853-FLAIR-1.0mm_skullstripped",
+        }
+        if modality.lower() not in filenames:
+            raise ValueError(f"No MNI template available for modality {modality}.")
+        resource_folder = Path(__file__).parent.parent / "resources" / "masks"
+        for extension in (".nii.gz", ".nii"):
+            template = resource_folder / (filenames[modality.lower()] + extension)
+            if template.is_file():
+                return template
+        raise FileNotFoundError(
+            f"No skull-stripped MNI template found for modality {modality}. "
+            f"Provide {filenames[modality.lower()]}.nii.gz or .nii in {resource_folder}."
+        )
     if modality.lower() == "t1":
         return _get_mni_template_t1()
     if modality.lower() == "flair":

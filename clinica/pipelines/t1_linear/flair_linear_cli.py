@@ -20,6 +20,12 @@ pipeline_name = "flair-linear"
     is_flag=True,
     help="Do not crop the image with template (cropped image are suggested for using with DL models)",
 )
+@cli_param.option.option(
+    "--skullstripped",
+    is_flag=True,
+    help="Use the local skull-stripped reference template from resources/masks. "
+    "This does not skull-strip the input images.",
+)
 @cli_param.option.random_seed
 @cli_param.option_group.common_pipelines_options
 @cli_param.option.subjects_sessions_tsv
@@ -42,6 +48,7 @@ def cli(
     n_procs: Optional[int] = None,
     use_antspy: bool = False,
     caps_name: Optional[str] = None,
+    skullstripped: bool = False,
 ) -> None:
     """Affine registration of Flair images to the MNI standard space.
 
@@ -56,6 +63,7 @@ def cli(
     parameters = {
         "uncropped_image": uncropped_image,
         "random_seed": random_seed,
+        "skullstripped": skullstripped,
     }
 
     # Most of the time, you will want to instantiate your pipeline with a

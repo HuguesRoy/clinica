@@ -77,3 +77,10 @@ You can now use the [ClinicaDL framework](https://clinicadl.readthedocs.io/) pre
 !!! tip
     Easily access the papers cited on this page on
     [Zotero](https://www.zotero.org/groups/2240070/clinica_aramislab/collections/8B2R2826).
+
+Use `--skullstripped` to register to a local skull-stripped reference template.
+This option does not perform skull stripping on the input images.
+Place the template in `clinica/resources/masks/`, named
+`mni_icbm152_t1_tal_nlin_sym_09c_skullstripped`
+with a `.nii.gz` or `.nii` extension. The pipeline reports an error if it is missing.
+The default reference template is unchanged when this option is omitted.

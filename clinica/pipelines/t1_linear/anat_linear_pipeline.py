@@ -148,7 +148,8 @@ class AnatLinear(Pipeline):
         from clinica.utils.ux import print_images_to_process
 
         self.ref_template = get_mni_template(
-            "t1" if self.name == "t1-linear" else "flair"
+            "t1" if self.name == "t1-linear" else "flair",
+            skullstripped=self.parameters.get("skullstripped", False),
         )
 
         # Inputs from anat/ folder
@@ -330,7 +331,17 @@ class AnatLinear(Pipeline):
             ants_registration_node.inputs.dimension = 3
 
         random_seed = self.parameters.get("random_seed", None)
-        ants_registration_node.inputs.random_seed = random_seed or 0
+
+        if random_seed is not None:
+            print("Setting random_seed for antsRegistration")
+            ants_registration_node.inputs.random_seed = random_seed or 0
+        else:
+            log_and_warn(
+                "The installed ANTs binary does NOT support --random-seed. "
+                "Skipping random seed.",
+                UserWarning,
+            )
+
 
         # 3. Crop image (using nifti). It uses custom interface, from utils file
 
