@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from typing import Optional
 
 import click
@@ -8,6 +9,7 @@ from clinica.pipelines import cli_param
 from clinica.pipelines.engine import clinica_pipeline
 
 from .apply_transform_pipeline import UtilsApplyTransform
+
 
 pipeline_name = "utils-apply-transform-1"
 
@@ -20,7 +22,10 @@ pipeline_name = "utils-apply-transform-1"
 @cli_param.option.option(
     "--from",
     "from_mode",
-    type=click.Choice(["t1-linear", "flair-linear"], case_sensitive=True),
+    type=click.Choice(
+        ["t1-linear", "flair-linear"],
+        case_sensitive=True,
+    ),
     default="t1-linear",
     show_default=True,
     help="Which pipeline's transform to use (t1-linear or flair-linear).",
@@ -54,6 +59,21 @@ pipeline_name = "utils-apply-transform-1"
     help="Target space to resample into.",
 )
 @cli_param.option.option(
+    "--interpolation",
+    "interpolation",
+    type=click.Choice(
+        ["Linear", "NearestNeighbor"],
+        case_sensitive=True,
+    ),
+    default="Linear",
+    show_default=True,
+    help=(
+        "Interpolation used by ANTs when resampling. "
+        "Use 'Linear' for intensity images and "
+        "'NearestNeighbor' for segmentation masks or discrete label maps."
+    ),
+)
+@cli_param.option.option(
     "--use-antspy",
     "use_antspy",
     is_flag=True,
@@ -80,6 +100,7 @@ def cli(
     input_suffix: str = "T1w",
     output_suffix: str = "desc-noBias",
     space: str = "MNI152NLin2009cSym",
+    interpolation: str = "Linear",
     use_antspy: bool = False,
     uncropped_image: bool = False,
     subjects_sessions_tsv: Optional[str] = None,
@@ -87,23 +108,25 @@ def cli(
     n_procs: Optional[int] = None,
     caps_name: Optional[str] = None,
 ) -> None:
-    """Reapply a precomputed linear transform to a BIDS image (T1w / FLAIR / etc.).
+    """Reapply a precomputed linear transform to a BIDS image.
 
-    The transform is retrieved from a previous pipeline (t1-linear / flair-linear)
-    and applied to a BIDS image specified via ``--input-suffix``. The result is
-    written as a CAPS-compliant image under:
+    The transform is retrieved from a previous pipeline
+    (t1-linear / flair-linear) and applied to a BIDS image
+    specified via ``--input-suffix``.
+
+    The result is written under:
 
         subjects/<sub>/<ses>/custom/
 
-    with a filename of the form:
+    Interpolation can be selected with ``--interpolation``.
+    Use ``Linear`` for continuous-valued images and
+    ``NearestNeighbor`` for segmentation masks or label maps.
 
-        <sub>_<ses>_space-<space>_<output-suffix>.nii.gz
-
-    Interpolation is trilinear (ANTs 'Linear'), and an optional cropping step,
-    consistent with t1-linear / flair-linear, is applied unless
-    ``--uncropped-image`` is given.
+    An optional cropping step, consistent with t1-linear /
+    flair-linear, is applied unless ``--uncropped-image`` is given.
     """
     from networkx import Graph
+
     from clinica.utils.ux import print_end_pipeline
 
     parameters = {
@@ -111,9 +134,10 @@ def cli(
         "input_suffix": input_suffix,
         "output_suffix": output_suffix,
         "space": space,
+        "interpolation": interpolation,
         "use_antspy": use_antspy,
         "uncropped_image": uncropped_image,
-        "output_subfolder": "custom",  # per your choice
+        "output_subfolder": "custom",
     }
 
     pipeline = UtilsApplyTransform(
@@ -126,19 +150,23 @@ def cli(
         caps_name=caps_name,
     )
 
-    # Working directory and MultiProc config
     if working_directory:
         pipeline.base_dir = working_directory
 
     exec_pipeline = (
-        pipeline.run(plugin="MultiProc", plugin_args={"n_procs": int(n_procs)})
+        pipeline.run(
+            plugin="MultiProc",
+            plugin_args={"n_procs": int(n_procs)},
+        )
         if n_procs
         else pipeline.run()
     )
 
     if isinstance(exec_pipeline, Graph):
         print_end_pipeline(
-            pipeline_name, pipeline.base_dir, pipeline.base_dir_was_specified
+            pipeline_name,
+            pipeline.base_dir,
+            pipeline.base_dir_was_specified,
         )
 
 

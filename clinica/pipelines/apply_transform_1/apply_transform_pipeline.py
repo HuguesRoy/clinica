@@ -96,6 +96,7 @@ class UtilsApplyTransform(Pipeline):
         self.parameters.setdefault("space", "MNI152NLin2009cSym")
         self.parameters.setdefault("uncropped_image", False)
         self.parameters.setdefault("output_subfolder", "custom")
+        self.parameters.setdefault("interpolation", "Linear")
 
         self.use_antspy = use_antspy
         self.caps_name = caps_name
@@ -148,7 +149,7 @@ class UtilsApplyTransform(Pipeline):
 
         if len(subs):
             print_images_to_process(subs, sess)
-            cprint("Applying affine to image with Linear (trilinear) interpolation…")
+            cprint("Applying affine to image with Linear {self.parameters['interpolation']} interpolation…")
 
         read_input_node = npe.Node(
             name="LoadingCLIArguments",
@@ -189,7 +190,10 @@ class UtilsApplyTransform(Pipeline):
         output_suffix = self.parameters["output_suffix"]
         uncropped = bool(self.parameters.get("uncropped_image", False))
         output_subfolder = self.parameters.get("output_subfolder", "custom")
-
+        interpolation = self.parameters.get(
+            "interpolation",
+            "Linear",
+        )
         # 1) Build paths: final CAPS path + a temp file in working dir
         def build_paths(
             caps_dir,
@@ -203,6 +207,7 @@ class UtilsApplyTransform(Pipeline):
             reference,
             transform,
             from_mode,
+            interpolation,
             output_subfolder,
         ):
 
@@ -237,7 +242,7 @@ class UtilsApplyTransform(Pipeline):
                 "Sources": [str(source_image)],
                 "Transform": str(transform),
                 "Reference": str(reference),
-                "Interpolation": "Linear",
+                "Interpolation": interpolation,
                 "Space": space,
                 "Pipeline": f"utils-apply-transform (from {from_mode})",
             }
@@ -261,7 +266,7 @@ class UtilsApplyTransform(Pipeline):
                 input_names=[
                     "caps_dir", "base_dir", "subject", "session", "space",
                     "output_suffix","modality_suffix", "source_image", "reference", "transform",
-                    "from_mode", "output_subfolder",
+                    "from_mode","interpolation", "output_subfolder",
                 ],
                 output_names=[
                     "tmp_path",
@@ -281,12 +286,11 @@ class UtilsApplyTransform(Pipeline):
         mk.inputs.from_mode = self.parameters["from"]
         mk.inputs.output_subfolder = output_subfolder
         mk.inputs.modality_suffix = self.parameters["input_suffix"].split("_")[-1]
-
-
+        mk.inputs.interpolation = interpolation
         # 2) antsApplyTransforms -> temp file (Linear interpolation)
         apply = npe.Node(name="antsApplyTransforms", interface=ApplyTransforms())
         apply.inputs.dimension = 3
-        apply.inputs.interpolation = "Linear"  # trilinear interpolation
+        apply.inputs.interpolation = interpolation  # trilinear interpolation
         apply.inputs.default_value = 0
 
         # 3) Optional crop (like t1-linear/flair-linear)
